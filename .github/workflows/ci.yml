@@ -1,0 +1,120 @@
+name: Create and publish a Docker image
+
+# 当推送到 main 分支时触发工作流程
+on:
+  push:
+    branches: ['main']
+
+# 定义环境变量
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# 工作流程包含多个任务
+jobs:
+  # 测试任务
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8
+    
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test with pytest
+      run: |
+        pytest --cov=. --cov-report=xml || true
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # 构建和推送 Docker 镜像
+  build-and-push-image:
+    needs: test
+    runs-on: ubuntu-latest
+    # 设置 GITHUB_TOKEN 的权限
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      # 登录到 Container registry
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      # 提取 Docker 的元数据（标签和标记）
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          
+      # 构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      
+      # 触发 dokploy 重新部署
+      - name: Trigger dokploy redeploy
+        run: |
+          curl -X GET http://129.226.181.34:3000/api/deploy/JQnwAhSXRmgJSgitznC0i
+
+  # 安全扫描任务
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run security scan with Bandit
+      run: |
+        pip install bandit
+        bandit -r . -f json -o bandit-report.json || true
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-scan-results
+        path: bandit-report.json
