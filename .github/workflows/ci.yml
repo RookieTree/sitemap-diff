@@ -96,6 +96,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            TELEGRAM_TARGET_CHAT=${{ secrets.TELEGRAM_TARGET_CHAT }}
+            DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
       
       # 触发 dokploy 重新部署
       - name: Trigger dokploy redeploy
