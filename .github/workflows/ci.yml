@@ -102,12 +102,11 @@ jobs:
           build-args: |
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             TELEGRAM_TARGET_CHAT=${{ secrets.TELEGRAM_TARGET_CHAT }}
-            DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
       
       # 触发 dokploy 重新部署
       - name: Trigger dokploy redeploy
         run: |
-          curl -X GET http://129.226.181.34:3000/api/deploy/JQnwAhSXRmgJSgitznC0i
+          curl -X GET http://129.226.181.34:3000/api/deploy/PM5E63xX7EpQ7WxuMi5G0
 
   # 安全扫描任务
   security:

@@ -15,11 +15,9 @@ RUN mkdir -p storage/rss/config storage/rss/sitemaps
 # Define build arguments
 ARG TELEGRAM_BOT_TOKEN
 ARG TELEGRAM_TARGET_CHAT
-ARG DISCORD_TOKEN
 
 # Set environment variables
 ENV TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 ENV TELEGRAM_TARGET_CHAT=${TELEGRAM_TARGET_CHAT}
-ENV DISCORD_TOKEN=${DISCORD_TOKEN}
 
 CMD ["python", "site-bot.py"]
