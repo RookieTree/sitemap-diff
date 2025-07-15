@@ -127,3 +127,47 @@ project/
    - 每小时检查一次所有订阅的sitemap
    - 自动对比并发现新增的URL
    - 将更新内容发送到指定频道/用户
+
+## 故障排除
+
+### "Chat not found" 错误
+
+如果遇到以下错误：
+```
+HTTP Request: POST https://api.telegram.org/bot.../sendDocument "HTTP/1.1 400 Bad Request"
+发送URL更新消息失败: Chat not found
+```
+
+**原因分析：**
+- `TELEGRAM_TARGET_CHAT` 环境变量配置的聊天ID无效或已失效
+
+**解决步骤：**
+
+1. **获取正确的聊天ID**
+   ```bash
+   # 在目标群组或私聊中发送以下命令
+   /chatid
+   ```
+   Bot会返回当前聊天的ID，将其设置为 `TELEGRAM_TARGET_CHAT` 环境变量
+
+2. **检查Bot权限**
+   - 确保Bot已添加到目标群组/频道
+   - 确保Bot具有发送消息权限
+   - 如果是私聊，确保用户没有阻止Bot
+
+3. **验证配置**
+   ```bash
+   # 检查.env文件中的配置
+   cat .env | grep TELEGRAM_TARGET_CHAT
+   ```
+
+4. **重启服务**
+   ```bash
+   ./restart.sh
+   ```
+
+### 其他常见问题
+
+- **"Forbidden"错误**: Bot被踢出群组或权限不足
+- **"Bad Request"错误**: 发送内容格式有误
+- **连接超时**: 网络连接问题，检查网络状况

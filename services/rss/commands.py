@@ -10,6 +10,24 @@ from telegram.ext import ContextTypes, CommandHandler, Application
 rss_manager = RSSManager()
 
 
+async def get_chat_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    获取当前聊天的ID，用于配置TELEGRAM_TARGET_CHAT环境变量
+    """
+    chat_id = update.effective_chat.id
+    chat_title = update.effective_chat.title or update.effective_chat.first_name or "私聊"
+    
+    message = (
+        f"📍 聊天信息:\n"
+        f"名称: {chat_title}\n"
+        f"ID: `{chat_id}`\n\n"
+        f"💡 将此ID设置为TELEGRAM_TARGET_CHAT环境变量值"
+    )
+    
+    await update.message.reply_text(message, parse_mode='Markdown')
+    logging.info(f"用户请求聊天ID: {chat_title} (ID: {chat_id})")
+
+
 async def send_update_notification(
     bot: Bot,
     url: str,
@@ -23,6 +41,19 @@ async def send_update_notification(
     chat_id = target_chat or telegram_config["target_chat"]
     if not chat_id:
         logging.error("未配置发送目标，请检查TELEGRAM_TARGET_CHAT环境变量")
+        return
+
+    # 验证chat_id有效性
+    try:
+        chat_info = await bot.get_chat(chat_id)
+        logging.info(f"目标聊天验证成功: {chat_info.title or chat_info.first_name} (ID: {chat_id})")
+    except Exception as e:
+        logging.error(f"无效的聊天ID {chat_id}: {str(e)}")
+        logging.error("请检查以下可能的问题:")
+        logging.error("1. TELEGRAM_TARGET_CHAT环境变量配置是否正确")
+        logging.error("2. Bot是否已添加到目标群组/频道")
+        logging.error("3. Bot是否具有发送消息权限")
+        logging.error("4. 如果是私聊，用户是否已阻止Bot")
         return
 
     domain = urlparse(url).netloc
@@ -45,17 +76,32 @@ async def send_update_notification(
                     f"来源: {url}\n"
                     f"------------------------------------"
                 )
+        try:
             await bot.send_document(
                 chat_id=chat_id,
                 document=dated_file,
                 caption=header_message,
+                read_timeout=30,
+                write_timeout=30,
+                connect_timeout=30,
             )
             logging.info(f"已发送sitemap文件: {dated_file} for {url}")
-            try:
-                dated_file.unlink()  # 发送成功后删除
-                logging.info(f"已删除临时sitemap文件: {dated_file}")
-            except OSError as e:
-                logging.error(f"删除文件失败: {dated_file}, Error: {str(e)}")
+        except Exception as e:
+            logging.error(f"发送文档失败: {str(e)}, 改为发送文本消息")
+            # 文档发送失败时，改为发送文本消息
+            await bot.send_message(
+                chat_id=chat_id, 
+                text=header_message, 
+                disable_web_page_preview=True
+            )
+            await asyncio.sleep(5)
+        
+        # 无论发送成功或失败，都尝试删除临时文件
+        try:
+            dated_file.unlink()
+            logging.info(f"已删除临时sitemap文件: {dated_file}")
+        except OSError as e:
+            logging.error(f"删除文件失败: {dated_file}, Error: {str(e)}")
         else:
             # 没有文件时，发送美化标题文本
             if not new_urls:
@@ -63,6 +109,7 @@ async def send_update_notification(
                 await bot.send_message(
                     chat_id=chat_id, text=message, disable_web_page_preview=True
                 )
+                await asyncio.sleep(5)
             else:
                 header_message = (
                     f"✨ {domain} ✨\n"
@@ -73,8 +120,9 @@ async def send_update_notification(
                 await bot.send_message(
                     chat_id=chat_id, text=header_message, disable_web_page_preview=True
                 )
+                await asyncio.sleep(5)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(5)
         if new_urls:
             logging.info(f"开始发送 {len(new_urls)} 个新URL for {domain}")
             for u in new_urls:
@@ -82,11 +130,11 @@ async def send_update_notification(
                     chat_id=chat_id, text=u, disable_web_page_preview=False
                 )
                 logging.info(f"已发送URL: {u}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(5)
             logging.info(f"已发送 {len(new_urls)} 个新URL for {domain}")
 
             # 发送更新结束的消息
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
             end_message = (
                 f"✨ {domain} 更新推送完成 ✨\n------------------------------------"
             )
@@ -95,7 +143,21 @@ async def send_update_notification(
             )
             logging.info(f"已发送更新结束消息 for {domain}")
     except Exception as e:
-        logging.error(f"发送URL更新消息失败 for {url}: {str(e)}", exc_info=True)
+        error_msg = str(e)
+        if "Chat not found" in error_msg:
+            logging.error(f"聊天未找到错误 for {url}: {error_msg}")
+            logging.error("可能的解决方案:")
+            logging.error("1. 检查TELEGRAM_TARGET_CHAT环境变量是否配置正确")
+            logging.error("2. 确保Bot已添加到目标群组并具有发送消息权限")
+            logging.error("3. 如果是私聊，确保用户没有阻止Bot")
+        elif "Forbidden" in error_msg:
+            logging.error(f"权限被拒绝 for {url}: {error_msg}")
+            logging.error("Bot可能被踢出群组或权限不足，请重新添加Bot并授予适当权限")
+        elif "Bad Request" in error_msg:
+            logging.error(f"请求格式错误 for {url}: {error_msg}")
+            logging.error("请检查发送的内容格式是否正确")
+        else:
+            logging.error(f"发送URL更新消息失败 for {url}: {error_msg}", exc_info=True)
         # logging.traceback.print_exc()
 
 
@@ -217,6 +279,7 @@ def register_commands(application: Application):
     """注册RSS相关的命令"""
     application.add_handler(CommandHandler("rss", rss_command))
     application.add_handler(CommandHandler("news", force_summary_command_handler))
+    application.add_handler(CommandHandler("chatid", get_chat_id_command))
 
 
 async def force_send_keywords_summary(bot: Bot, target_chat: str = None) -> None:
